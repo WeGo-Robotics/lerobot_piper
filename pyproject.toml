@@ -101,6 +101,7 @@ grpcio-dep = ["grpcio==1.73.1", "protobuf==6.31.0"]
 # Motors
 feetech = ["feetech-servo-sdk>=1.0.0"]
 dynamixel = ["dynamixel-sdk>=3.7.31"]
+piper = ["piper_sdk>=0.4.1"]
 
 # Robots
 gamepad = ["lerobot[pygame-dep]", "hidapi>=0.14.0"]
