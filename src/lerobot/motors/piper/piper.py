@@ -18,6 +18,7 @@
 from ..motors_bus import Motor, MotorCalibration, MotorsBus, NameOrID, Value, get_address
 
 import time
+from typing import Any
 # Import piper_sdk module
 from piper_sdk import *
 from wego_piper.port_handler import PortHandler
@@ -87,6 +88,18 @@ class PiperMotorsBus(MotorsBus):
         while( not self.piper.EnablePiper()):
             time.sleep(0.01)
 
+    def get_action(self) -> dict[str, Any]:
+        msg = self.piper.GetArmJointMsgs()
+        rlt = {
+            "joint1.pos" : msg.joint_state.joint_1,
+            "joint2.pos" : msg.joint_state.joint_2,
+            "joint3.pos" : msg.joint_state.joint_3,
+            "joint4.pos" : msg.joint_state.joint_4,
+            "joint5.pos" : msg.joint_state.joint_5,
+            "joint6.pos" : msg.joint_state.joint_6,
+        }
+        return
+
     def _get_half_turn_homings(self, positions):
         pass
 
@@ -104,7 +117,10 @@ class PiperMotorsBus(MotorsBus):
 
     @property
     def is_calibrated(self) -> bool:
-
+        return True
+    
+    def set_slave(self):
+        piper.MasterSlaveConfig(0xFC, 0, 0, 0)
 
 
 
