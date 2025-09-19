@@ -601,6 +601,10 @@ def make_robot_config(robot_type: str, **kwargs) -> RobotConfig:
     if robot_type == "aloha":
         raise NotImplementedError  # TODO
 
+    elif robot_type == "piper_follower":
+        from lerobot.robots.piper_follower import PiperFollowerConfig
+
+        return PiperFollowerConfig(**kwargs)
     elif robot_type == "koch_follower":
         from lerobot.robots.koch_follower import KochFollowerConfig
 

@@ -19,11 +19,11 @@ Examples:
 
 ```shell
 lerobot-replay \
-    --robot.type=so100_follower \
-    --robot.port=/dev/tty.usbmodem58760431541 \
+    --robot.type=piper_follower \
+    --robot.port=can0 \
     --robot.id=black \
     --dataset.repo_id=aliberts/record-test \
-    --dataset.episode=2
+    --dataset.episode=0
 ```
 
 Example replay with bimanual so100:
@@ -57,6 +57,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.utils.robot_utils import busy_wait
 from lerobot.utils.utils import (
@@ -103,7 +104,7 @@ def replay(cfg: ReplayConfig):
         action = {}
         for i, name in enumerate(dataset.features["action"]["names"]):
             action[name] = action_array[i]
-
+        print(action)
         robot.send_action(action)
 
         dt_s = time.perf_counter() - start_episode_t
