@@ -19,9 +19,9 @@ Example:
 
 ```shell
 lerobot-record \
-    --robot.type=so100_follower \
-    --robot.port=/dev/tty.usbmodem58760431541 \
-    --robot.cameras="{laptop: {type: opencv, camera_index: 0, width: 640, height: 480}}" \
+    --robot.type=piper_follower \
+    --robot.port=can0 \
+    --robot.cameras="{laptop: {type: opencv, index_or_path: 2, width: 640, height: 480, fps: 30}}" \
     --robot.id=black \
     --dataset.repo_id=aliberts/record-test \
     --dataset.num_episodes=2 \
@@ -32,6 +32,18 @@ lerobot-record \
     # --teleop.id=blue \
     # <- Policy optional if you want to record with a policy \
     # --policy.path=${HF_USER}/my_policy \
+```
+
+```shell
+lerobot-record \
+    --robot.type=piper_follower \
+    --robot.port=can0 \
+    --robot.cameras="{laptop: {type: opencv, index_or_path: 2, width: 640, height: 480, fps: 30}}" \
+    --robot.id=black \
+    --dataset.num_episodes=2 \
+    --dataset.single_task="Grab the cube" \
+    --display_data=true /
+    --dataset.repo_id=${HF_USER}/piper_test
 ```
 
 Example recording with bimanual so100:
@@ -62,6 +74,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from pprint import pformat
+import numpy
 
 from lerobot.cameras import (  # noqa: F401
     CameraConfig,  # noqa: F401
@@ -85,6 +98,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.teleoperators import (  # noqa: F401
     Teleoperator,
@@ -179,8 +193,8 @@ class RecordConfig:
             self.policy = PreTrainedConfig.from_pretrained(policy_path, cli_overrides=cli_overrides)
             self.policy.pretrained_path = policy_path
 
-        if self.teleop is None and self.policy is None:
-            raise ValueError("Choose a policy, a teleoperator or both to control the robot")
+        # if self.teleop is None and self.policy is None:
+        #     raise ValueError("Choose a policy, a teleoperator or both to control the robot")
 
     @classmethod
     def __get_path_fields__(cls) -> list[str]:
@@ -200,6 +214,9 @@ def record_loop(
     single_task: str | None = None,
     display_data: bool = False,
 ):
+    print ("start")
+    print(dataset)
+    
     if dataset is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
 
@@ -234,9 +251,11 @@ def record_loop(
             break
 
         observation = robot.get_observation()
+        # print(observation)
 
         if policy is not None or dataset is not None:
             observation_frame = build_dataset_frame(dataset.features, observation, prefix="observation")
+            # print(observation_frame)
 
         if policy is not None:
             action_values = predict_action(
@@ -259,25 +278,35 @@ def record_loop(
             base_action = robot._from_keyboard_to_base_action(keyboard_action)
 
             action = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
-        else:
-            logging.info(
-                "No policy or teleoperator provided, skipping action generation."
-                "This is likely to happen when resetting the environment without a teleop device."
-                "The robot won't be at its rest position at the start of the next episode."
-            )
-            continue
+        # else:
+        #     logging.info(
+        #         "No policy or teleoperator provided, skipping action generation."
+        #         "This is likely to happen when resetting the environment without a teleop device."
+        #         "The robot won't be at its rest position at the start of the next episode."
+        #     )
+
+        #     continue
 
         # Action can eventually be clipped using `max_relative_target`,
         # so action actually sent is saved in the dataset.
-        sent_action = robot.send_action(action)
+        # sent_action = robot.send_action(action)
+        sent_action = {}
+        # print (observation)
+        for key, item in observation.items():
+            if type(item) == float:
+                sent_action[key] = item
+        # print (sent_action)
+        # print (dataset)
 
         if dataset is not None:
             action_frame = build_dataset_frame(dataset.features, sent_action, prefix="action")
+            # print (action_frame)
             frame = {**observation_frame, **action_frame}
             dataset.add_frame(frame, task=single_task)
 
         if display_data:
-            log_rerun_data(observation, action)
+            # log_rerun_data(observation, action)
+            log_rerun_data(observation, sent_action)
 
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(1 / fps - dt_s)
@@ -287,13 +316,15 @@ def record_loop(
 
 @parser.wrap()
 def record(cfg: RecordConfig) -> LeRobotDataset:
+
     init_logging()
     logging.info(pformat(asdict(cfg)))
     if cfg.display_data:
         _init_rerun(session_name="recording")
-
+    
     robot = make_robot_from_config(cfg.robot)
-    teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
+    # teleop = make_teleoperator_from_config(cfg.teleop) if cfg.teleop is not None else None
+    teleop = None
 
     action_features = hw_to_dataset_features(robot.action_features, "action", cfg.dataset.video)
     obs_features = hw_to_dataset_features(robot.observation_features, "observation", cfg.dataset.video)
@@ -326,6 +357,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             image_writer_threads=cfg.dataset.num_image_writer_threads_per_camera * len(robot.cameras),
             batch_encoding_size=cfg.dataset.video_encoding_batch_size,
         )
+
+    logging.info(dataset)
 
     # Load pretrained policy
     policy = None if cfg.policy is None else make_policy(cfg.policy, ds_meta=dataset.meta)
