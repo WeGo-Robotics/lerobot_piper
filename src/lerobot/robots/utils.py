@@ -21,6 +21,10 @@ from .robot import Robot
 
 
 def make_robot_from_config(config: RobotConfig) -> Robot:
+    if config.type == "piper_follower":
+        from .piper_follower import PiperFollower
+
+        return PiperFollower(config)
     if config.type == "koch_follower":
         from .koch_follower import KochFollower
 
