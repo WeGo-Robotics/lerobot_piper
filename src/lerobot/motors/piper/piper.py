@@ -18,36 +18,47 @@
 from ..motors_bus import Motor, MotorCalibration, MotorsBus, NameOrID, Value, get_address
 
 import time
+import logging
 from typing import Any
 # Import piper_sdk module
 from piper_sdk import *
 from wego_piper.port_handler import PortHandler
+from .tables import (
+    AVAILABLE_BAUDRATES,
+    MODEL_BAUDRATE_TABLE,
+    MODEL_CONTROL_TABLE,
+    MODEL_ENCODING_TABLE,
+    MODEL_NUMBER_TABLE,
+    MODEL_RESOLUTION_TABLE,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class PiperMotorsBus(MotorsBus):
 
     available_baudrates = [500_000, 1_000_000]
     default_timeout = 1000
-    # model_baudrate_table = DUMMY_MODEL_BAUDRATE_TABLE
-    # model_ctrl_table = DUMMY_MODEL_CTRL_TABLE
-    # model_encoding_table = DUMMY_MODEL_ENCODING_TABLE
-    # model_number_table = DUMMY_MODEL_NUMBER_TABLE
-    # model_resolution_table = DUMMY_MODEL_RESOLUTION_TABLE
+    model_baudrate_table = MODEL_BAUDRATE_TABLE
+    model_ctrl_table = MODEL_CONTROL_TABLE
+    model_encoding_table = MODEL_ENCODING_TABLE
+    model_number_table = MODEL_NUMBER_TABLE
+    model_resolution_table = MODEL_RESOLUTION_TABLE
     normalized_data = ["Present_Position", "Goal_Position"]
 
     def __init__(
         self,
+        id: str,
         port: str,
         motors: dict[str, Motor],
         calibration: dict[str, MotorCalibration] | None = None,
     ):
         super().__init__(port, motors, calibration)
-        import dynamixel_sdk as dxl
 
-        self.port_handler = PortHandler(self.port)
-        self._comm_success = dxl.COMM_SUCCESS
-
-        self.piper = C_PiperInterface_V2()
+        self.port_handler = PortHandler()
+        self.id = id
+        self.piper = C_PiperInterface_V2(port)
+        logger.info(f"{id} : {port} is selected.")
 
 
 
@@ -61,9 +72,9 @@ class PiperMotorsBus(MotorsBus):
     def _find_single_motor(self, motor, initial_baudrate):
         pass
 
-    def connect(self, handshake: bool = True) -> None:
+    def connect(self, handshake: bool = True) -> bool:
         self.port_handler.setupPort(self.piper)
-        self.port_handler.openPort()
+        return self.port_handler.openPort()
 
     def disconnect(self, disable_torque: bool = True) -> None:
         if disable_torque:
@@ -84,30 +95,65 @@ class PiperMotorsBus(MotorsBus):
             num_retry -= 1
             time.sleep(0.01)
 
+    def _normalize(self, ids_values: dict[int, int]) -> dict[int, float]:
+        pass
+
     def enable_torque(self, motors: str | list[str] | None = None, num_retry: int = 0) -> None:
-        while( not self.piper.EnablePiper()):
-            time.sleep(0.01)
+        retry = 10
+        while( not self.piper.EnablePiper() and retry):
+            retry -= 1
+            logger.info(f"{self.id} torque on.")
+            logger.info(f"{self.piper.GetArmEnableStatus()}")
+            time.sleep(0.1)
 
     def get_action(self) -> dict[str, Any]:
-        msg = self.piper.GetArmJointMsgs()
+        msg_joint = self.piper.GetArmJointMsgs()
+        msg_gripr = self.piper.GetArmGripperMsgs()
         rlt = {
-            "joint1.pos" : msg.joint_state.joint_1,
-            "joint2.pos" : msg.joint_state.joint_2,
-            "joint3.pos" : msg.joint_state.joint_3,
-            "joint4.pos" : msg.joint_state.joint_4,
-            "joint5.pos" : msg.joint_state.joint_5,
-            "joint6.pos" : msg.joint_state.joint_6,
+            "joint1"  : float(msg_joint.joint_state.joint_1),
+            "joint2"  : float(msg_joint.joint_state.joint_2),
+            "joint3"  : float(msg_joint.joint_state.joint_3),
+            "joint4"  : float(msg_joint.joint_state.joint_4),
+            "joint5"  : float(msg_joint.joint_state.joint_5),
+            "joint6"  : float(msg_joint.joint_state.joint_6),
+            "gripper" : float(msg_gripr.gripper_state.grippers_angle),
         }
-        return
+        return rlt
+    
+    def get_control(self) -> dict[str :Any]:
+        msg_joint = self.piper.GetArmJointCtrl()
+        msg_gripr = self.piper.GetArmGripperCtrl()
+        rlt = {
+            "joint1"  : msg_joint.joint_ctrl.joint_1,
+            "joint2"  : msg_joint.joint_ctrl.joint_2,
+            "joint3"  : msg_joint.joint_ctrl.joint_3,
+            "joint4"  : msg_joint.joint_ctrl.joint_4,
+            "joint5"  : msg_joint.joint_ctrl.joint_5,
+            "joint6"  : msg_joint.joint_ctrl.joint_6,
+            "gripper" : msg_gripr.gripper_ctrl.grippers_angle,
+        }
+        return rlt
+
+    def set_action(self, action : dict[str, Any]) -> dict[str, Any]:
+        self.piper.JointCtrl( 
+            action["joint1"], 
+            action["joint2"], 
+            action["joint3"], 
+            action["joint4"],
+            action["joint5"],
+            action["joint6"],
+        )
+        self.piper.GripperCtrl(abs(action["gripper"]), 1000, 0x01, 0)
+        return self.get_control()
 
     def _get_half_turn_homings(self, positions):
         pass
 
-    def _encode_sign(self, data_name, ids_values):
-        pass
+    def _encode_sign(self, data_name: str, ids_values: dict[int, int]) -> dict[int, int]:
+        return ids_values
 
-    def _decode_sign(self, data_name, ids_values):
-        pass
+    def _decode_sign(self, data_name: str, ids_values: dict[int, int]) -> dict[int, int]:
+        return ids_values
     
     def _split_into_byte_chunks(self, value, length):
         pass
@@ -120,15 +166,19 @@ class PiperMotorsBus(MotorsBus):
         return True
     
     def set_slave(self):
-        piper.MasterSlaveConfig(0xFC, 0, 0, 0)
+        self.piper.MasterSlaveConfig(0xFC, 0, 0, 0)
 
+    def set_master(self):
+        self.piper.MasterSlaveConfig(0xFA, 0, 0, 0)
 
+    def broadcast_ping(self, num_retry: int = 0, raise_on_error: bool = False) -> dict[int, int] | None:
+        pass
 
+    def configure_motors(self) -> None:
+        pass
 
-
-
-
-
+    def read_calibration(self) -> dict[str, MotorCalibration]:
+        pass
 
 
 if __name__ == "__main__":
