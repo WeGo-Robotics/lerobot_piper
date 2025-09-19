@@ -24,23 +24,25 @@ import draccus
 
 from lerobot.errors import DeviceAlreadyConnectedError, DeviceNotConnectedError
 from lerobot.constants import HF_LEROBOT_CALIBRATION, TELEOPERATORS
-from lerobot.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot.motors.piper import PiperMotorsBus
+from lerobot.motors import Motor, MotorNormMode
 
+from ...motors.piper import PiperMotorsBus
 from ..teleoperator import Teleoperator
-from .config_piper_leader import PipperLeaderConfig
+from .config_piper_leader import PiperLeaderConfig
 
 logger = logging.getLogger(__name__)
 
 class PiperLeader(Teleoperator):
 
-    config_class = PipperLeaderConfig
+    config_class = PiperLeaderConfig
     name = "piper_leader"
 
-    def __init__(self, config: PipperLeaderConfig):
+    def __init__(self, config: PiperLeaderConfig):
         self.id = config.id
+        self.port = config.port
         self.bus = PiperMotorsBus(
-            port=self.config.port,
+            id=config.id,
+            port=config.port,
             motors={
                 "joint1": Motor(1, "HTDW-5047", MotorNormMode.RANGE_M100_100),
                 "joint2": Motor(2, "HTDW-5047", MotorNormMode.RANGE_M100_100),
@@ -68,12 +70,16 @@ class PiperLeader(Teleoperator):
         return self.bus.is_connected
 
     def connect(self, calibrate: bool = True) -> None:
-        self.bus.connect()
+        while not self.bus.connect():
+            logger.info(f"{self} connection failed.")
+            time.sleep(0.1)
+        logger.info(f"{self} connected.")
         self.bus.enable_torque()
+        logger.info(f"{self} torque on.")
 
     @property
     def is_calibrated(self) -> bool:
-        pass
+        return True
 
     def calibrate(self) -> None:
         pass
@@ -85,15 +91,11 @@ class PiperLeader(Teleoperator):
         pass
 
     def configure(self) -> None:
-        """
-        Apply any one-time or runtime configuration to the teleoperator.
-        This may include setting motor parameters, control modes, or initial state.
-        """
         pass
 
     def setup_motors(self) -> None:
         self.bus.connect()
-        self.bus.set_slave()
+        self.bus.set_master()
 
     def get_action(self) -> dict[str, Any]:
         if not self.is_connected:
@@ -101,17 +103,6 @@ class PiperLeader(Teleoperator):
         return self.bus.get_action()
 
     def send_feedback(self, feedback: dict[str, Any]) -> None:
-        """
-        Send a feedback action command to the teleoperator.
-
-        Args:
-            feedback (dict[str, Any]): Dictionary representing the desired feedback. Its structure should match
-                :pymeth:`feedback_features`.
-
-        Returns:
-            dict[str, Any]: The action actually sent to the motors potentially clipped or modified, e.g. by
-                safety limits on velocity.
-        """
         pass
 
     def disconnect(self) -> None:
