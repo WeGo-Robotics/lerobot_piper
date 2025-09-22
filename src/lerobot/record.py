@@ -355,21 +355,23 @@ def record_loop(
             base_action = robot._from_keyboard_to_base_action(keyboard_action)
             act = {**arm_action, **base_action} if len(base_action) > 0 else arm_action
             act_processed_teleop = teleop_action_processor((act, obs))
-        else:
-            logging.info(
-                "No policy or teleoperator provided, skipping action generation."
-                "This is likely to happen when resetting the environment without a teleop device."
-                "The robot won't be at its rest position at the start of the next episode."
-            )
-            continue
+        # else:
+        #     logging.info(
+        #         "No policy or teleoperator provided, skipping action generation."
+        #         "This is likely to happen when resetting the environment without a teleop device."
+        #         "The robot won't be at its rest position at the start of the next episode."
+        #     )
+        #     continue
 
         # Applies a pipeline to the action, default is IdentityProcessor
         if policy is not None and act_processed_policy is not None:
             action_values = act_processed_policy
             robot_action_to_send = robot_action_processor((act_processed_policy, obs))
         else:
+            # ! PiPER leader send command directly to follower.
+            act_processed_teleop = teleop_action_processor((obs, obs))
             action_values = act_processed_teleop
-            robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
+            # robot_action_to_send = robot_action_processor((act_processed_teleop, obs))
 
         # Send action to robot
         # Action can eventually be clipped using `max_relative_target`,
@@ -378,7 +380,7 @@ def record_loop(
         # sent_action = robot.send_action(robot_action_to_send)
         sent_action = {}
         # print (observation)
-        for key, item in observation.items():
+        for key, item in obs_processed.items():
             if type(item) == float:
                 sent_action[key] = item
         # print (sent_action)
@@ -393,7 +395,7 @@ def record_loop(
 
         if display_data:
             # log_rerun_data(observation=obs_processed, action=action_values)
-            log_rerun_data(observation, sent_action)
+            log_rerun_data(obs_processed, sent_action)
 
         dt_s = time.perf_counter() - start_loop_t
         busy_wait(1 / fps - dt_s)
