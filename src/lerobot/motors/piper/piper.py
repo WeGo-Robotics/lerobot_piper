@@ -30,6 +30,7 @@ from .tables import (
     MODEL_ENCODING_TABLE,
     MODEL_NUMBER_TABLE,
     MODEL_RESOLUTION_TABLE,
+    INITIALIZE_POSITION,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,9 +76,25 @@ class PiperMotorsBus(MotorsBus):
     def connect(self, handshake: bool = True) -> bool:
         self.port_handler.setupPort(self.piper)
         return self.port_handler.openPort()
+    
+    def clear_gripper(self):
+        self.piper.GripperCtrl(0, 1000, 0x03, 0)
 
-    def disconnect(self, disable_torque: bool = True) -> None:
+    def parking(self):
+        timeout = 100 # 10sec
+        self.set_action(INITIALIZE_POSITION)
+        time.sleep(0.1)
+        status = self.piper.GetArmStatus()
+
+        while (status.arm_status.motion_status and timeout):
+            self.set_action(INITIALIZE_POSITION)
+            time.sleep(0.1)
+            status = self.piper.GetArmStatus()
+            timeout -= 1
+
+    def disconnect(self, disable_torque: bool = False) -> None:
         if disable_torque:
+            self.parking()
             self.piper.DisablePiper()
 
         self.port_handler.closePort()
@@ -102,9 +119,11 @@ class PiperMotorsBus(MotorsBus):
         retry = 10
         while( not self.piper.EnablePiper() and retry):
             retry -= 1
-            logger.info(f"{self.id} torque on.")
+            logger.info(f"{self.id} torque retry.")
             logger.info(f"{self.piper.GetArmEnableStatus()}")
             time.sleep(0.1)
+        logger.info(f"{self.id} torque on.")
+        logger.info(f"{self.piper.GetArmEnableStatus()}")
 
     def get_action(self) -> dict[str, Any]:
         msg_joint = self.piper.GetArmJointMsgs()
@@ -135,15 +154,16 @@ class PiperMotorsBus(MotorsBus):
         return rlt
 
     def set_action(self, action : dict[str, Any]) -> dict[str, Any]:
+        self.piper.ModeCtrl(0x01, 0x01, 30, 0x00)
         self.piper.JointCtrl( 
-            action["joint1"], 
-            action["joint2"], 
-            action["joint3"], 
-            action["joint4"],
-            action["joint5"],
-            action["joint6"],
+            int(action["joint1"]), 
+            int(action["joint2"]), 
+            int(action["joint3"]), 
+            int(action["joint4"]),
+            int(action["joint5"]),
+            int(action["joint6"]),
         )
-        self.piper.GripperCtrl(abs(action["gripper"]), 1000, 0x01, 0)
+        self.piper.GripperCtrl(abs(int(action["gripper"])), 1000, 0x03, 0)
         return self.get_control()
 
     def _get_half_turn_homings(self, positions):

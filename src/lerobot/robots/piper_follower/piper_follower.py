@@ -42,6 +42,7 @@ class PiperFollower(Robot):
     name = "piper_follower"
 
     def __init__(self, config: PiperFollowerConfig):
+        self.config = config
         self.id = config.id
         self.port = config.port
         self.bus = PiperMotorsBus(
@@ -96,8 +97,11 @@ class PiperFollower(Robot):
 
     def connect(self, calibrate: bool = True) -> None:
         self.bus.connect()
-        self.bus.enable_torque()
         logger.info(f"{self} connected.")
+        self.bus.enable_torque()
+        logger.info(f"{self} go to origin.")
+        if calibrate:
+            self.bus.parking()
 
         for cam in self.cameras.values():
             cam.connect()
@@ -107,6 +111,7 @@ class PiperFollower(Robot):
         return self.bus.is_calibrated
 
     def calibrate(self) -> None:
+        self.bus.clear_gripper()
         return True
     
     def _load_calibration(self, fpath: Path | None = None) -> None:
@@ -147,10 +152,22 @@ class PiperFollower(Robot):
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
-        rlt = self.bus.set_action(action)
+        
+        goal_pos = {key.removesuffix(".pos"): val for key, val in action.items() if key.endswith(".pos")}
+
+        # Cap goal position when too far away from present position.
+        # /!\ Slower fps expected due to reading from the follower.
+        if self.config.max_relative_target is not None:
+            present_pos = self.bus.sync_read("Present_Position")
+            goal_present_pos = {key: (g_pos, present_pos[key]) for key, g_pos in goal_pos.items()}
+            goal_pos = ensure_safe_goal_position(goal_present_pos, self.config.max_relative_target)
+
+        rlt = self.bus.set_action(goal_pos)
 
         return {f"{motor}.pos": val for motor, val in rlt.items()}
+    
+    def parking(self):
+        self.bus.parking()
 
     def disconnect(self) -> None:
-        self.bus.disable_torque()
-        self.bus.disconnect()
+        self.bus.disconnect(True)

@@ -73,3 +73,13 @@ AVAILABLE_BAUDRATES = [
     3_500_000,
     4_000_000,
 ]
+
+INITIALIZE_POSITION = {
+    "joint1": 0,
+    "joint2": 0,
+    "joint3": 0,
+    "joint4": 0,
+    "joint5": 0,
+    "joint6": 0,
+    "gripper": 0,
+}

@@ -56,6 +56,7 @@ from lerobot.robots import (  # noqa: F401
     make_robot_from_config,
     so100_follower,
     so101_follower,
+    piper_follower,
 )
 from lerobot.scripts.server.configs import RobotClientConfig
 from lerobot.scripts.server.constants import SUPPORTED_ROBOTS
@@ -370,9 +371,9 @@ class RobotClient:
             timed_action = self.action_queue.get_nowait()
         get_end = time.perf_counter() - get_start
 
-        _performed_action = self.robot.send_action(
-            self._action_tensor_to_action_dict(timed_action.get_action())
-        )
+        action = self._action_tensor_to_action_dict(timed_action.get_action())
+        print(action)
+        _performed_action = self.robot.send_action(action)
         with self.latest_action_lock:
             self.latest_action = timed_action.get_timestep()
 
@@ -459,6 +460,7 @@ class RobotClient:
         while self.running:
             control_loop_start = time.perf_counter()
             """Control loop: (1) Performing actions, when available"""
+            print ("actions_available", self.actions_available())
             if self.actions_available():
                 _performed_action = self.control_loop_action(verbose)
 

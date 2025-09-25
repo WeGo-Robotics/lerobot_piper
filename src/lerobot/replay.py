@@ -112,7 +112,7 @@ def replay(cfg: ReplayConfig):
         action = {}
         for i, name in enumerate(dataset.features["action"]["names"]):
             action[name] = action_array[i]
-        print(action)
+
         robot_obs = robot.get_observation()
 
         processed_action = robot_action_processor((action, robot_obs))
