@@ -15,7 +15,7 @@
 # limitations under the License.
 
 
-from ..motors_bus import Motor, MotorCalibration, MotorsBus, NameOrID, Value, get_address
+from ..motors_bus import Motor, MotorCalibration, MotorsBus, MotorNormMode, NameOrID, Value, get_address
 
 import time
 import logging
@@ -46,6 +46,7 @@ class PiperMotorsBus(MotorsBus):
     model_number_table = MODEL_NUMBER_TABLE
     model_resolution_table = MODEL_RESOLUTION_TABLE
     normalized_data = ["Present_Position", "Goal_Position"]
+    apply_drive_mode = False
 
     def __init__(
         self,
@@ -113,17 +114,75 @@ class PiperMotorsBus(MotorsBus):
             time.sleep(0.01)
 
     def _normalize(self, ids_values: dict[int, int]) -> dict[int, float]:
-        pass
+        if not self.calibration:
+            raise RuntimeError(f"{self} has no calibration registered.")
 
-    def enable_torque(self, motors: str | list[str] | None = None, num_retry: int = 0) -> None:
+        normalized_values = {}
+        for id_, val in ids_values.items():
+            # motor = self._id_to_name(id_)
+            motor = id_
+            min_ = self.calibration[motor].range_min
+            max_ = self.calibration[motor].range_max
+            drive_mode = self.apply_drive_mode and self.calibration[motor].drive_mode
+            if max_ == min_:
+                raise ValueError(f"Invalid calibration for motor '{motor}': min and max are equal.")
+
+            bounded_val = min(max_, max(min_, val))
+            if self.motors[motor].norm_mode is MotorNormMode.RANGE_M100_100:
+                norm = (((bounded_val - min_) / (max_ - min_)) * 200) - 100
+                normalized_values[id_] = -norm if drive_mode else norm
+            elif self.motors[motor].norm_mode is MotorNormMode.RANGE_0_100:
+                norm = ((bounded_val - min_) / (max_ - min_)) * 100
+                normalized_values[id_] = 100 - norm if drive_mode else norm
+            elif self.motors[motor].norm_mode is MotorNormMode.DEGREES:
+                mid = (min_ + max_) / 2
+                max_res = self.model_resolution_table[self._id_to_model(id_)] - 1
+                normalized_values[id_] = (val - mid) * 360 / max_res
+            else:
+                raise NotImplementedError
+
+        return normalized_values
+
+    def _unnormalize(self, ids_values: dict[int, float]) -> dict[int, int]:
+        if not self.calibration:
+            raise RuntimeError(f"{self} has no calibration registered.")
+
+        unnormalized_values = {}
+        for id_, val in ids_values.items():
+            motor = id_
+            min_ = self.calibration[motor].range_min
+            max_ = self.calibration[motor].range_max
+            drive_mode = self.apply_drive_mode and self.calibration[motor].drive_mode
+            if max_ == min_:
+                raise ValueError(f"Invalid calibration for motor '{motor}': min and max are equal.")
+
+            if self.motors[motor].norm_mode is MotorNormMode.RANGE_M100_100:
+                val = -val if drive_mode else val
+                bounded_val = min(100.0, max(-100.0, val))
+                unnormalized_values[id_] = int(((bounded_val + 100) / 200) * (max_ - min_) + min_)
+            elif self.motors[motor].norm_mode is MotorNormMode.RANGE_0_100:
+                val = 100 - val if drive_mode else val
+                bounded_val = min(100.0, max(0.0, val))
+                unnormalized_values[id_] = int((bounded_val / 100) * (max_ - min_) + min_)
+            elif self.motors[motor].norm_mode is MotorNormMode.DEGREES:
+                mid = (min_ + max_) / 2
+                max_res = self.model_resolution_table[self._id_to_model(id_)] - 1
+                unnormalized_values[id_] = int((val * max_res / 360) + mid)
+            else:
+                raise NotImplementedError
+
+        return unnormalized_values
+
+    def enable_torque(self, motors: str | list[str] | None = None, num_retry: int = 0) -> bool:
         retry = 10
         while( not self.piper.EnablePiper() and retry):
             retry -= 1
-            logger.info(f"{self.id} torque retry.")
-            logger.info(f"{self.piper.GetArmEnableStatus()}")
             time.sleep(0.1)
-        logger.info(f"{self.id} torque on.")
         logger.info(f"{self.piper.GetArmEnableStatus()}")
+        if not retry:
+            return False
+        logger.info(f"{self.id} torque on.")
+        return True
 
     def get_action(self) -> dict[str, Any]:
         msg_joint = self.piper.GetArmJointMsgs()
@@ -137,6 +196,7 @@ class PiperMotorsBus(MotorsBus):
             "joint6"  : float(msg_joint.joint_state.joint_6),
             "gripper" : float(msg_gripr.gripper_state.grippers_angle),
         }
+        rlt = self._normalize(rlt)
         return rlt
     
     def get_control(self) -> dict[str :Any]:
@@ -154,16 +214,17 @@ class PiperMotorsBus(MotorsBus):
         return rlt
 
     def set_action(self, action : dict[str, Any]) -> dict[str, Any]:
+        action_denormalzed = self._unnormalize(action)
         self.piper.ModeCtrl(0x01, 0x01, 30, 0x00)
         self.piper.JointCtrl( 
-            int(action["joint1"]), 
-            int(action["joint2"]), 
-            int(action["joint3"]), 
-            int(action["joint4"]),
-            int(action["joint5"]),
-            int(action["joint6"]),
+            int(action_denormalzed["joint1"]), 
+            int(action_denormalzed["joint2"]), 
+            int(action_denormalzed["joint3"]), 
+            int(action_denormalzed["joint4"]),
+            int(action_denormalzed["joint5"]),
+            int(action_denormalzed["joint6"]),
         )
-        self.piper.GripperCtrl(abs(int(action["gripper"])), 1000, 0x03, 0)
+        self.piper.GripperCtrl(abs(int(action_denormalzed["gripper"])), 1000, 0x03, 0)
         return self.get_control()
 
     def _get_half_turn_homings(self, positions):

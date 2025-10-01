@@ -49,13 +49,13 @@ class PiperFollower(Robot):
             id=config.id,
             port=config.port,
             motors={
-                "joint1": Motor(1, "HTDW-5047", MotorNormMode.RANGE_M100_100),
-                "joint2": Motor(2, "HTDW-5047", MotorNormMode.RANGE_M100_100),
-                "joint3": Motor(3, "HTDW-5047", MotorNormMode.RANGE_M100_100),
-                "joint4": Motor(4, "HTDW-5047", MotorNormMode.RANGE_M100_100),
-                "joint5": Motor(5, "HTDW-5047", MotorNormMode.RANGE_M100_100),
-                "joint6": Motor(6, "HTDW-5047", MotorNormMode.RANGE_M100_100),
-                "gripper": Motor(7, "HTDW-5047", MotorNormMode.RANGE_0_100),
+                "joint1": Motor(1, "AGILEX-M", MotorNormMode.RANGE_M100_100),
+                "joint2": Motor(2, "AGILEX-M", MotorNormMode.RANGE_M100_100),
+                "joint3": Motor(3, "AGILEX-M", MotorNormMode.RANGE_M100_100),
+                "joint4": Motor(4, "AGILEX-S", MotorNormMode.RANGE_M100_100),
+                "joint5": Motor(5, "AGILEX-S", MotorNormMode.RANGE_M100_100),
+                "joint6": Motor(6, "AGILEX-S", MotorNormMode.RANGE_M100_100),
+                "gripper": Motor(7, "AGILEX-S", MotorNormMode.RANGE_0_100),
             },
             calibration={
                 "joint1": MotorCalibration(1, 0, 0, -150000, 150000),
@@ -64,7 +64,7 @@ class PiperFollower(Robot):
                 "joint4": MotorCalibration(4, 0, 0, -100000, 100000),
                 "joint5": MotorCalibration(5, 0, 0,  -65000, 65000 ),
                 "joint6": MotorCalibration(6, 0, 0, -100000, 130000),
-                "gripper": MotorCalibration(7, 0, 0, -60000, 0),
+                "gripper": MotorCalibration(7, 0, 0, 0, 68000),
             }
         )
         self.cameras = make_cameras_from_configs(config.cameras)
@@ -95,16 +95,19 @@ class PiperFollower(Robot):
         return self.bus.is_connected and all(cam.is_connected for cam in self.cameras.values())
         # return self.bus.is_connected
 
-    def connect(self, calibrate: bool = True) -> None:
-        self.bus.connect()
+    def connect(self, calibrate: bool = True) -> bool:
+        if not self.bus.connect():
+            return False
         logger.info(f"{self} connected.")
-        self.bus.enable_torque()
+        while not self.bus.enable_torque():
+            logger.info(f"{self} retry torque on.")    
         logger.info(f"{self} go to origin.")
         if calibrate:
             self.bus.parking()
 
         for cam in self.cameras.values():
             cam.connect()
+        return True
 
     @property
     def is_calibrated(self) -> bool:
@@ -169,5 +172,12 @@ class PiperFollower(Robot):
     def parking(self):
         self.bus.parking()
 
-    def disconnect(self) -> None:
-        self.bus.disconnect(True)
+    def disconnect(self, disable_torque: bool = False) -> None:
+        self.bus.disconnect(disable_torque)
+
+    def get_status(self):
+        rlt = {
+            print(self.bus.piper.GetArmGripperMsgs()),
+            print(self.bus.piper.GetArmGripperCtrl()),
+        }
+        return rlt

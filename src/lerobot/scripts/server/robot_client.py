@@ -372,7 +372,6 @@ class RobotClient:
         get_end = time.perf_counter() - get_start
 
         action = self._action_tensor_to_action_dict(timed_action.get_action())
-        print(action)
         _performed_action = self.robot.send_action(action)
         with self.latest_action_lock:
             self.latest_action = timed_action.get_timestep()

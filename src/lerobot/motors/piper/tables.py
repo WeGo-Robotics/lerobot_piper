@@ -28,30 +28,36 @@ MODEL_ENCODINGS_TABLE = {
 }
 
 MODEL_ENCODING_TABLE = {
-    "HTDW-5047": MODEL_ENCODINGS_TABLE,
+    "AGILEX-M": MODEL_ENCODINGS_TABLE,
+    "AGILEX-S": MODEL_ENCODINGS_TABLE,
 }
 
 # {model: model_resolution}
 MODEL_RESOLUTION_TABLE = {
-    "HTDW-5047": 4096,
+    "AGILEX-M": 4096,
+    "AGILEX-S": 4096,
 }
 
 # {model: model_number}
 MODEL_NUMBER_TABLE = {
-    "HTDW-5047": 1190,
+    "AGILEX-M": 1190,
+    "AGILEX-S": 1191,
 }
 
 # {model: available_operating_modes}
 MODEL_OPERATING_MODES = {
-    "HTDW-5047": [0, 1, 3, 4, 5, 16],
+    "AGILEX-M": [0, 1, 3, 4, 5, 16],
+    "AGILEX-S": [0, 1, 3, 4, 5, 16],
 }
 
 MODEL_CONTROL_TABLE = {
-    "HTDW-5047": 1190,
+    "AGILEX-M": 1190,
+    "AGILEX-S": 1191,
 }
 
 MODEL_BAUDRATE_TABLE = {
-    "HTDW-5047": 1190,
+    "AGILEX-M": 1190,
+    "AGILEX-M": 1191,
 }
 
 AVAILABLE_BAUDRATES = [

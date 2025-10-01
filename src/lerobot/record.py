@@ -139,7 +139,6 @@ from lerobot.utils.utils import (
 )
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
-
 @dataclass
 class DatasetRecordConfig:
     # Dataset identifier. By convention it should match '{hf_username}/{dataset_name}' (e.g. `lerobot/test`).
@@ -269,9 +268,6 @@ def record_loop(
     single_task: str | None = None,
     display_data: bool = False,
 ):
-    print ("start")
-    print(dataset)
-    
     if dataset is not None and dataset.fps != fps:
         raise ValueError(f"The dataset fps should be equal to requested fps ({dataset.fps} != {fps}).")
 
@@ -314,9 +310,10 @@ def record_loop(
         if events["exit_early"]:
             events["exit_early"] = False
             break
-
+        
         # Get robot observation
         obs = robot.get_observation()
+        robot.get_status()
 
         # Applies a pipeline to the raw robot observation, default is IdentityProcessor
         obs_processed = robot_observation_processor(obs)
@@ -477,7 +474,8 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
             },
         )
 
-    robot.connect()
+    robot.connect(False)
+    robot.calibrate()
     if teleop is not None:
         teleop.connect()
 
