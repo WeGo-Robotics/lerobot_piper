@@ -1,0 +1,1 @@
+python ./src/lerobot/camera_prop.py
