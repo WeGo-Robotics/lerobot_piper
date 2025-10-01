@@ -1,0 +1,11 @@
+lerobot-train   \
+    --policy.device=cuda  \
+    --policy.type=smolvla   \
+    --dataset.repo_id=wego-hansu/piper_pick_yellow_car   \
+    --dataset.video_backend=pyav   \
+    --batch_size=64   \
+    --steps=20000   \
+    --eval_freq=5000   \
+    --output_dir=outputs/train/piper_smolvla_pick_yellow_cars_new   \
+    --job_name=piper_smolvla_yellow_car   \
+    --wandb.enable=false
