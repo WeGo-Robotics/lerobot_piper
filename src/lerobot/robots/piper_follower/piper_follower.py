@@ -173,6 +173,9 @@ class PiperFollower(Robot):
         self.bus.parking()
 
     def disconnect(self, disable_torque: bool = False) -> None:
+        for camera in self.cameras.values():
+            if camera.is_connected:
+                camera.disconnect()
         self.bus.disconnect(disable_torque)
 
     def get_status(self):

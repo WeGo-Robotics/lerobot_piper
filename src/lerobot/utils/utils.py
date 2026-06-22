@@ -14,13 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import math
 import os
 import os.path as osp
 import platform
+import re
+import shutil
 import select
 import subprocess
 import sys
 import time
+import wave
 from copy import copy, deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -202,9 +206,14 @@ def say(text: str, blocking: bool = False):
         cmd = ["say", text]
 
     elif system == "Linux":
-        cmd = ["spd-say", text]
-        if blocking:
-            cmd.append("--wait")
+        if shutil.which("espeak-ng"):
+            cmd = ["espeak-ng", text]
+        elif shutil.which("espeak"):
+            cmd = ["espeak", text]
+        else:
+            cmd = ["spd-say", text]
+            if blocking:
+                cmd.append("--wait")
 
     elif system == "Windows":
         cmd = [
@@ -223,11 +232,109 @@ def say(text: str, blocking: bool = False):
         subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW if system == "Windows" else 0)
 
 
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
+
+
+def _voice_prompt_key(text: str) -> str | None:
+    match = re.fullmatch(r"Recording episode (\d+)", text)
+    if match:
+        return f"recording_episode_{match.group(1)}"
+
+    mapping = {
+        "Reset the environment": "reset_the_environment",
+        "Re-record episode": "re_record_episode",
+        "Stop recording": "stop_recording",
+        "Exiting": "exiting",
+    }
+    return mapping.get(text)
+
+
+def play_cached_voice_prompt(text: str) -> bool:
+    prompt_dir = os.environ.get("LEROBOT_VOICE_PROMPT_DIR")
+    if not prompt_dir:
+        return False
+
+    key = _voice_prompt_key(text)
+    if key is None:
+        return False
+
+    wav_path = Path(prompt_dir) / f"{key}.wav"
+    if wav_path.exists() and shutil.which("aplay"):
+        subprocess.run(["aplay", "-q", str(wav_path)], check=False)
+        return True
+
+    path = Path(prompt_dir) / f"{key}.mp3"
+    if not path.exists():
+        return False
+
+    try:
+        import pygame
+
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        pygame.mixer.music.load(str(path))
+        pygame.mixer.music.play()
+        while pygame.mixer.music.get_busy():
+            time.sleep(0.02)
+        return True
+    except Exception as exc:
+        logging.warning("Failed to play cached voice prompt %s: %s", path, exc)
+        return False
+
+
+def _play_tone(freq_hz: int, duration_s: float, volume: float = 0.35):
+    if not shutil.which("aplay"):
+        return
+
+    sample_rate = 16_000
+    samples = int(sample_rate * duration_s)
+    amplitude = int(32767 * volume)
+    path = Path("/tmp/lerobot_phase_beep.wav")
+
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate)
+        frames = bytearray()
+        for i in range(samples):
+            sample = int(amplitude * math.sin(2 * math.pi * freq_hz * i / sample_rate))
+            frames.extend(sample.to_bytes(2, byteorder="little", signed=True))
+        wav.writeframes(frames)
+
+    subprocess.run(["aplay", "-q", str(path)], check=False)
+
+
+def play_phase_beep(text: str):
+    if not _truthy_env("LEROBOT_PHASE_BEEP"):
+        return
+
+    lower = text.lower()
+    if "recording episode" in lower:
+        pattern = [(880, 0.16)]
+    elif "reset" in lower:
+        pattern = [(440, 0.12), (440, 0.12)]
+    elif "re-record" in lower:
+        pattern = [(660, 0.1), (660, 0.1), (660, 0.1)]
+    elif "stop" in lower or "exiting" in lower:
+        pattern = [(220, 0.3)]
+    else:
+        pattern = [(660, 0.1)]
+
+    for index, (freq, duration) in enumerate(pattern):
+        if index > 0:
+            time.sleep(0.08)
+        _play_tone(freq, duration)
+
+
 def log_say(text: str, play_sounds: bool = True, blocking: bool = False):
     logging.info(text)
 
     if play_sounds:
-        say(text, blocking)
+        if not play_cached_voice_prompt(text):
+            say(text, blocking)
+    if blocking:
+        play_phase_beep(text)
 
 
 def get_channel_first_image_shape(image_shape: tuple) -> tuple:

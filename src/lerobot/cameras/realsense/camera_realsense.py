@@ -486,7 +486,7 @@ class RealSenseCamera(Camera):
         self.stop_event = None
 
     # NOTE(Steven): Missing implementation for depth for now
-    def async_read(self, timeout_ms: float = 200) -> np.ndarray:
+    def async_read(self, timeout_ms: float = 1000) -> np.ndarray:
         """
         Reads the latest available frame data (color) asynchronously.
 
