@@ -216,6 +216,8 @@ class RecordConfig:
     play_sounds: bool = True
     # If true, wait for Enter before each episode and after each episode for manual reset.
     manual_step: bool = False
+    # If true, after each episode ask the user whether to keep (1) or discard and re-record (2).
+    keep_prompt: bool = False
     # Resume recording on an existing dataset.
     resume: bool = False
 
@@ -568,6 +570,19 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 events["exit_early"] = False
                 dataset.clear_episode_buffer()
                 continue
+
+            # Post-episode keep/discard prompt for quality control.
+            # Press 1 to keep, 2 to discard and re-record this episode.
+            if cfg.keep_prompt and not events["stop_recording"]:
+                choice = input(
+                    f"\n[record] Episode {dataset.num_episodes} finished. "
+                    "Keep this episode? [1] Keep  [2] Discard & re-record: "
+                ).strip()
+                if choice == "2":
+                    log_say("Re-record episode", cfg.play_sounds, blocking=True)
+                    events["exit_early"] = False
+                    dataset.clear_episode_buffer()
+                    continue
 
             dataset.save_episode()
             recorded_episodes += 1

@@ -56,6 +56,7 @@ PHASE_BEEP="${PHASE_BEEP:-true}"
 VOICE_PROMPT_DIR="${VOICE_PROMPT_DIR:-${LEROBOT_DIR}/audio_prompts/en-US-AriaNeural}"
 AUTO_SUFFIX_DATASET_ROOT="${AUTO_SUFFIX_DATASET_ROOT:-1}"
 MANUAL_STEP="${MANUAL_STEP:-true}"
+KEEP_PROMPT="${KEEP_PROMPT:-true}"
 AUTO_RESET_ARMS="${AUTO_RESET_ARMS:-true}"
 AUTO_RESET_LEADER="${AUTO_RESET_LEADER:-false}"
 RESET_SPEED="${RESET_SPEED:-50}"
@@ -158,6 +159,7 @@ echo "[record] play_sounds=${PLAY_SOUNDS}"
 echo "[record] phase_beep=${PHASE_BEEP}"
 echo "[record] voice_prompt_dir=${VOICE_PROMPT_DIR}"
 echo "[record] manual_step=${MANUAL_STEP}"
+echo "[record] keep_prompt=${KEEP_PROMPT}"
 echo "[record] auto_reset_arms=${AUTO_RESET_ARMS}"
 
 ROBOT_CAMERAS="${ROBOT_CAMERAS}" DATASET_FPS="${DATASET_FPS}" python - <<'PY'
@@ -225,4 +227,5 @@ lerobot-record \
   --dataset.push_to_hub="${PUSH_TO_HUB}" \
   --display_data="${DISPLAY_DATA}" \
   --play_sounds="${PLAY_SOUNDS}" \
-  --manual_step="${MANUAL_STEP}"
+  --manual_step="${MANUAL_STEP}" \
+  --keep_prompt="${KEEP_PROMPT}"
