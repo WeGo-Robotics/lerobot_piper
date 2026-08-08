@@ -71,6 +71,9 @@ lerobot-record \
 """
 
 import logging
+import os
+import shlex
+import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -139,6 +142,22 @@ from lerobot.utils.utils import (
 )
 from lerobot.utils.visualization_utils import _init_rerun, log_rerun_data
 
+
+def run_reset_command_if_configured() -> None:
+    command = os.environ.get("LEROBOT_RESET_COMMAND")
+    if not command:
+        return
+    pause_file = os.environ.get("LEROBOT_RELAY_PAUSE_FILE")
+    print(f"[record] Running reset command: {command}")
+    try:
+        if pause_file:
+            Path(pause_file).parent.mkdir(parents=True, exist_ok=True)
+            Path(pause_file).touch()
+        subprocess.run(shlex.split(command), check=False)
+    finally:
+        if pause_file:
+            Path(pause_file).unlink(missing_ok=True)
+
 @dataclass
 class DatasetRecordConfig:
     # Dataset identifier. By convention it should match '{hf_username}/{dataset_name}' (e.g. `lerobot/test`).
@@ -195,6 +214,10 @@ class RecordConfig:
     display_data: bool = False
     # Use vocal synthesis to read events.
     play_sounds: bool = True
+    # If true, wait for Enter before each episode and after each episode for manual reset.
+    manual_step: bool = False
+    # If true, after each episode ask the user whether to keep (1) or discard and re-record (2).
+    keep_prompt: bool = False
     # Resume recording on an existing dataset.
     resume: bool = False
 
@@ -304,6 +327,7 @@ def record_loop(
 
     timestamp = 0
     start_episode_t = time.perf_counter()
+    num_frames = 0
     while timestamp < control_time_s:
         start_loop_t = time.perf_counter()
 
@@ -313,7 +337,6 @@ def record_loop(
         
         # Get robot observation
         obs = robot.get_observation()
-        robot.get_status()
 
         # Applies a pipeline to the raw robot observation, default is IdentityProcessor
         obs_processed = robot_observation_processor(obs)
@@ -389,6 +412,7 @@ def record_loop(
             # print (action_frame)
             frame = {**observation_frame, **action_frame, "task": single_task}
             dataset.add_frame(frame)
+            num_frames += 1
 
         if display_data:
             # log_rerun_data(observation=obs_processed, action=action_values)
@@ -398,6 +422,16 @@ def record_loop(
         busy_wait(1 / fps - dt_s)
 
         timestamp = time.perf_counter() - start_episode_t
+
+    elapsed_s = time.perf_counter() - start_episode_t
+    if dataset is not None and elapsed_s > 0:
+        logging.info(
+            "Recorded %d frames in %.2fs, effective fps %.2f / requested fps %s",
+            num_frames,
+            elapsed_s,
+            num_frames / elapsed_s,
+            fps,
+        )
 
 
 @parser.wrap()
@@ -484,7 +518,11 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
     with VideoEncodingManager(dataset):
         recorded_episodes = 0
         while recorded_episodes < cfg.dataset.num_episodes and not events["stop_recording"]:
-            log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds)
+            if cfg.manual_step:
+                input(f"\n[record] Press Enter to start episode {dataset.num_episodes}...")
+            else:
+                log_say(f"Recording episode {dataset.num_episodes}", cfg.play_sounds, blocking=True)
+
             record_loop(
                 robot=robot,
                 events=events,
@@ -502,12 +540,17 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 display_data=cfg.display_data,
             )
 
-            # Execute a few seconds without recording to give time to manually reset the environment
-            # Skip reset for the last episode to be recorded
-            if not events["stop_recording"] and (
+            # Give time to manually reset the environment. In manual_step mode,
+            # reset lasts until the user presses Enter instead of a fixed timer.
+            should_reset = not events["stop_recording"] and (
                 (recorded_episodes < cfg.dataset.num_episodes - 1) or events["rerecord_episode"]
-            ):
-                log_say("Reset the environment", cfg.play_sounds)
+            )
+            if should_reset and cfg.manual_step:
+                run_reset_command_if_configured()
+                input("[record] Episode finished. Reset complete or manually adjusted. Press Enter to continue...")
+            elif should_reset:
+                log_say("Reset the environment", cfg.play_sounds, blocking=True)
+                run_reset_command_if_configured()
                 record_loop(
                     robot=robot,
                     events=events,
@@ -522,11 +565,24 @@ def record(cfg: RecordConfig) -> LeRobotDataset:
                 )
 
             if events["rerecord_episode"]:
-                log_say("Re-record episode", cfg.play_sounds)
+                log_say("Re-record episode", cfg.play_sounds, blocking=True)
                 events["rerecord_episode"] = False
                 events["exit_early"] = False
                 dataset.clear_episode_buffer()
                 continue
+
+            # Post-episode keep/discard prompt for quality control.
+            # Press 1 to keep, 2 to discard and re-record this episode.
+            if cfg.keep_prompt and not events["stop_recording"]:
+                choice = input(
+                    f"\n[record] Episode {dataset.num_episodes} finished. "
+                    "Keep this episode? [1] Keep  [2] Discard & re-record: "
+                ).strip()
+                if choice == "2":
+                    log_say("Re-record episode", cfg.play_sounds, blocking=True)
+                    events["exit_early"] = False
+                    dataset.clear_episode_buffer()
+                    continue
 
             dataset.save_episode()
             recorded_episodes += 1
